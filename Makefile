@@ -102,3 +102,12 @@ cloud-load-from-local: wait-db require-CLOUD_DB_HOST require-CLOUD_DB_NAME requi
 		--data-only --no-owner --no-privileges \
 	| PGPASSWORD="$(CLOUD_PGPASSWORD)" psql "$(CLOUD_CONNINFO)" -v ON_ERROR_STOP=1
 	@echo "Cloud load from local ✅"
+
+# ----------------------------------
+# Full LOCAL → CLOUD refresh pipeline
+# ----------------------------------
+
+.PHONY: cloud-refresh
+
+cloud-refresh: cloud-reset cloud-schema cloud-load-from-local
+	@echo "CLOUD REFRESH COMPLETE 🚀"

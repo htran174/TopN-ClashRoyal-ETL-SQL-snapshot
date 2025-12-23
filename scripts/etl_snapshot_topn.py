@@ -6,7 +6,7 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 # --- make `src.*` imports work when running from repo root or as a script ---
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +36,17 @@ def _normalize_tag(tag: Any) -> str:
     return t
 
 
+def _player_ladder_value(p: Dict[str, Any]) -> int:
+    """
+    Leaderboard endpoint returns eloRating (not trophies).
+    Some endpoints return trophies. Use trophies if present, else eloRating.
+    """
+    try:
+        return int(p.get("trophies") or p.get("eloRating") or 0)
+    except Exception:
+        return 0
+
+
 def card_variant_from_evolution_level(evolution_level: Any) -> str:
     """
     Simple rule:
@@ -63,7 +74,10 @@ class CardObs:
     slot: int  # 1..8
 
 
-def _extract_8_cards(participant: Dict[str, Any], card_meta: Dict[str, Dict[str, Any]]) -> Optional[List[CardObs]]:
+def _extract_8_cards(
+    participant: Dict[str, Any],
+    card_meta: Dict[str, Dict[str, Any]],
+) -> Optional[List[CardObs]]:
     cards = participant.get("cards") or []
     if not isinstance(cards, list) or len(cards) < 8:
         return None
@@ -189,7 +203,8 @@ def main() -> None:
             {
                 "player_tag": tag,
                 "player_name": (p.get("name") or "").strip(),
-                "trophies": int(p.get("trophies") or 0),
+                # IMPORTANT: leaderboard provides eloRating, not trophies
+                "trophies": _player_ladder_value(p),
                 "rank_global": int(p.get("rank") or i),
             }
         )

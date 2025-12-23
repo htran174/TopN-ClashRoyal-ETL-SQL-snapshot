@@ -53,11 +53,11 @@ def get_global_top_players(limit: int = 300) -> Dict[str, Any]:
     Fetch players from the global ladder leaderboard.
 
     Wraps:
-        GET /leaderboard/{leaderboardId}?limit=...
+        https://api.clashroyale.com/v1/locations/global/pathoflegend/players
 
     leaderboardId 170000005 = global trophy leaderboard (per CR docs).
     """
     params: Dict[str, Any] = {"limit": limit}
-    path = f"/leaderboard/{LEADERBOARD_GLOBAL_ID}"
+    path = "/locations/global/pathoflegend/players"
     return cr_get(path, params=params)
 

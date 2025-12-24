@@ -137,6 +137,12 @@ def _participant_is_win_ranked_1v1(battle: Dict[str, Any], participant_tag: str)
     return False
 
 
+def _deck_hash_from_card_obs(card_obs: List[CardObs]) -> str:
+    card_keys = [(str(c.card_id), c.card_variant) for c in card_obs]
+    sig = canonical_deck_signature(card_keys)
+    return deck_hash_from_signature(sig)
+
+
 # ----------------------------
 # DB I/O
 # ----------------------------
@@ -162,6 +168,7 @@ def truncate_snapshot_tables(conn) -> None:
         "player_type_cards",
         "meta_type_cards",
         "meta_type_deck_ids",
+        "meta_type_matchups",  # NEW
         "meta_deck_types",
         "player_decks",
         "deck_cards",
@@ -203,7 +210,6 @@ def main() -> None:
             {
                 "player_tag": tag,
                 "player_name": (p.get("name") or "").strip(),
-                # IMPORTANT: leaderboard provides eloRating, not trophies
                 "trophies": _player_ladder_value(p),
                 "rank_global": int(p.get("rank") or i),
             }
@@ -228,6 +234,10 @@ def main() -> None:
     meta_deck_types = defaultdict(lambda: {"uses": 0, "wins": 0})
     meta_type_deck_ids = defaultdict(lambda: {"uses": 0, "wins": 0})
     meta_type_cards = defaultdict(lambda: {"uses": 0, "wins": 0})
+
+    # NEW: Type vs Type matchup matrix (directional)
+    # key: (deck_type, opp_deck_type) -> {uses, wins} from deck_type perspective
+    meta_type_matchups = defaultdict(lambda: {"uses": 0, "wins": 0})
 
     # Scan battlelogs for TopN only
     for pl in top_players:
@@ -254,31 +264,50 @@ def main() -> None:
             opp = b.get("opponent") or []
             if not (isinstance(team, list) and isinstance(opp, list) and len(team) == 1 and len(opp) == 1):
                 continue
+            if not (isinstance(team[0], dict) and isinstance(opp[0], dict)):
+                continue
 
-            # Process BOTH sides for meta
-            for part in (team[0], opp[0]):
-                if not isinstance(part, dict):
-                    continue
+            team_part = team[0]
+            opp_part = opp[0]
 
-                tag = _normalize_tag(part.get("tag"))
-                if not tag:
-                    continue
+            team_tag = _normalize_tag(team_part.get("tag"))
+            opp_tag = _normalize_tag(opp_part.get("tag"))
+            if not team_tag or not opp_tag:
+                continue
 
-                card_obs = _extract_8_cards(part, card_meta)
-                if card_obs is None:
-                    continue
+            # Extract both decks once (needed for matchups)
+            team_cards = _extract_8_cards(team_part, card_meta)
+            opp_cards = _extract_8_cards(opp_part, card_meta)
+            if team_cards is None or opp_cards is None:
+                continue
 
-                # Build deck hash (canonical sorted by card_id,variant)
-                card_keys = [(str(c.card_id), c.card_variant) for c in card_obs]
-                sig = canonical_deck_signature(card_keys)
-                dh = deck_hash_from_signature(sig)
+            team_dh = _deck_hash_from_card_obs(team_cards)
+            opp_dh = _deck_hash_from_card_obs(opp_cards)
 
-                # Deck type (override if exists else classifier)
-                names_for_classifier = [c.card_name for c in card_obs if c.card_name]
-                dtype = deck_type_overrides.get(dh) or classify_deck(names_for_classifier)
+            team_names_for_classifier = [c.card_name for c in team_cards if c.card_name]
+            opp_names_for_classifier = [c.card_name for c in opp_cards if c.card_name]
 
-                won = _participant_is_win_ranked_1v1(b, tag)
+            team_dtype = deck_type_overrides.get(team_dh) or classify_deck(team_names_for_classifier)
+            opp_dtype = deck_type_overrides.get(opp_dh) or classify_deck(opp_names_for_classifier)
 
+            team_won = _participant_is_win_ranked_1v1(b, team_tag)
+            opp_won = _participant_is_win_ranked_1v1(b, opp_tag)  # should be opposite, but keep robust
+
+            # --- NEW: update matchup matrix (directional) ---
+            # From team type perspective vs opponent type
+            meta_type_matchups[(team_dtype, opp_dtype)]["uses"] += 1
+            meta_type_matchups[(team_dtype, opp_dtype)]["wins"] += 1 if team_won else 0
+            # From opponent type perspective vs team type
+            meta_type_matchups[(opp_dtype, team_dtype)]["uses"] += 1
+            meta_type_matchups[(opp_dtype, team_dtype)]["wins"] += 1 if opp_won else 0
+
+            # Process BOTH sides for existing meta + player facts
+            sides = [
+                (team_tag, team_dh, team_dtype, team_cards, team_won),
+                (opp_tag, opp_dh, opp_dtype, opp_cards, opp_won),
+            ]
+
+            for tag, dh, dtype, card_obs, won in sides:
                 # Store deck dims once
                 if dh not in deck_hash_to_type:
                     deck_hash_to_type[dh] = dtype
@@ -322,6 +351,7 @@ def main() -> None:
     print(f"  deduped matches counted:    {deduped_matches}")
     print(f"  unique decks:               {len(deck_hash_to_type)}")
     print(f"  player_decks rows (TopN):   {len(player_decks_top)}")
+    print(f"  type matchups rows:         {len(meta_type_matchups)}")
 
     if args.dry_run:
         print("\n[ETL] Dry-run mode: no DB writes.")
@@ -482,12 +512,28 @@ def main() -> None:
                 ptc_rows,
             )
 
+        # NEW: meta_type_matchups (directional)
+        mtm_rows = [
+            {"deck_type": dt, "opp_deck_type": odt, "uses": v["uses"], "wins": v["wins"]}
+            for (dt, odt), v in meta_type_matchups.items()
+        ]
+        if mtm_rows:
+            conn.execute(
+                text("""
+                    INSERT INTO meta_type_matchups (deck_type, opp_deck_type, uses, wins)
+                    VALUES (:deck_type, :opp_deck_type, :uses, :wins)
+                """),
+                mtm_rows,
+            )
+
     print("\n[ETL] Load complete.")
     print("[ETL] Quick checks:")
     print("  SELECT COUNT(*) FROM player;")
     print("  SELECT COUNT(*) FROM player_decks;")
     print("  SELECT deck_hash, COUNT(*) FROM deck_cards GROUP BY deck_hash HAVING COUNT(*) <> 8;")
     print("  SELECT deck_type, uses FROM meta_deck_types ORDER BY uses DESC LIMIT 10;")
+    print("  SELECT deck_type, opp_deck_type, uses, wins, (wins::float/NULLIF(uses,0)) winrate")
+    print("    FROM meta_type_matchups ORDER BY uses DESC LIMIT 20;")
     print("  SELECT deck_hash, SUM(uses) uses, SUM(wins) wins, (SUM(wins)::float/NULLIF(SUM(uses),0)) winrate")
     print("    FROM player_decks GROUP BY deck_hash HAVING SUM(uses) >= 5 ORDER BY winrate DESC LIMIT 10;")
 

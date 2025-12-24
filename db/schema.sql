@@ -3,25 +3,11 @@
 -- SNAPSHOT MODE: TRUNCATE + RELOAD each refresh
 -- ============================================================
 
--- ---------- OPTIONAL CLEANUP ----------
--- Drop in dependency order if you want a clean reset of schema.
--- DROP TABLE IF EXISTS meta_type_cards;
--- DROP TABLE IF EXISTS player_type_cards;
--- DROP TABLE IF EXISTS meta_type_deck_ids;
--- DROP TABLE IF EXISTS meta_deck_types;
--- DROP TABLE IF EXISTS deck_type_overrides;
--- DROP TABLE IF EXISTS deck_cards;
--- DROP TABLE IF EXISTS player_decks;
--- DROP TABLE IF EXISTS decks;
--- DROP TABLE IF EXISTS cards;
--- DROP TABLE IF EXISTS deck_types;
--- DROP TABLE IF EXISTS player;
-
 -- ============================================================
 -- 0) Dimensions
 -- ============================================================
 
--- Deck types (dimension). Keeps DECKS clean and avoids FK to a rollup table.
+-- Deck types (dimension)
 CREATE TABLE IF NOT EXISTS deck_types (
   deck_type  TEXT PRIMARY KEY
 );
@@ -41,14 +27,13 @@ CREATE TABLE IF NOT EXISTS cards (
 );
 
 -- Decks (dimension)
--- deck_hash is derived from canonical 8-card signature: sort by (card_id, card_variant), then hash.
+-- deck_hash is derived from canonical 8-card signature
 CREATE TABLE IF NOT EXISTS decks (
   deck_hash   TEXT PRIMARY KEY,
   deck_type   TEXT NOT NULL REFERENCES deck_types(deck_type)
 );
 
--- Optional override mechanism (dimension-like)
--- If a row exists here, ETL must use this deck_type instead of classifier output.
+-- Optional override mechanism
 CREATE TABLE IF NOT EXISTS deck_type_overrides (
   deck_hash   TEXT PRIMARY KEY REFERENCES decks(deck_hash) ON DELETE CASCADE,
   deck_type   TEXT NOT NULL REFERENCES deck_types(deck_type)
@@ -58,13 +43,12 @@ CREATE TABLE IF NOT EXISTS deck_type_overrides (
 -- 1) Bridge Tables / Base Fact
 -- ============================================================
 
--- DECK_CARDS: defines the 8-card composition of a deck
--- Card identity is (card_id, card_variant). card_variant is NOT a PK by itself.
+-- Deck composition (8 cards)
 CREATE TABLE IF NOT EXISTS deck_cards (
   deck_hash     TEXT NOT NULL REFERENCES decks(deck_hash) ON DELETE CASCADE,
   card_id       INTEGER NOT NULL REFERENCES cards(card_id),
   card_variant  TEXT NOT NULL,
-  slot          SMALLINT, -- optional; if known, 1-8
+  slot          SMALLINT,
 
   PRIMARY KEY (deck_hash, card_id, card_variant),
 
@@ -75,9 +59,7 @@ CREATE TABLE IF NOT EXISTS deck_cards (
     CHECK (slot IS NULL OR (slot >= 1 AND slot <= 8))
 );
 
--- PLAYER_DECKS: base fact table at grain (player_tag, deck_hash)
--- uses = number of matches where player used that deck
--- wins = number of those matches that were wins
+-- Base fact: per-player per-deck totals
 CREATE TABLE IF NOT EXISTS player_decks (
   player_tag  TEXT NOT NULL REFERENCES player(player_tag) ON DELETE CASCADE,
   deck_hash   TEXT NOT NULL REFERENCES decks(deck_hash) ON DELETE CASCADE,
@@ -94,7 +76,7 @@ CREATE TABLE IF NOT EXISTS player_decks (
 -- 2) Rollup Tables (stored aggregates; recomputed each refresh)
 -- ============================================================
 
--- META_DECK_TYPES: global usage + wins for each archetype
+-- Global totals per deck type
 CREATE TABLE IF NOT EXISTS meta_deck_types (
   deck_type  TEXT PRIMARY KEY REFERENCES deck_types(deck_type),
   uses       INTEGER NOT NULL DEFAULT 0,
@@ -104,7 +86,7 @@ CREATE TABLE IF NOT EXISTS meta_deck_types (
     CHECK (uses >= 0 AND wins >= 0 AND wins <= uses)
 );
 
--- META_TYPE_DECK_IDS: global usage + wins for exact decks within each archetype
+-- Global totals per exact deck within type
 CREATE TABLE IF NOT EXISTS meta_type_deck_ids (
   deck_type  TEXT NOT NULL REFERENCES deck_types(deck_type),
   deck_hash  TEXT NOT NULL REFERENCES decks(deck_hash) ON DELETE CASCADE,
@@ -117,7 +99,7 @@ CREATE TABLE IF NOT EXISTS meta_type_deck_ids (
     CHECK (uses >= 0 AND wins >= 0 AND wins <= uses)
 );
 
--- META_TYPE_CARDS: global card usage + wins within each deck type
+-- Global card totals within a deck type
 CREATE TABLE IF NOT EXISTS meta_type_cards (
   deck_type     TEXT NOT NULL REFERENCES deck_types(deck_type),
   card_id       INTEGER NOT NULL REFERENCES cards(card_id),
@@ -134,7 +116,7 @@ CREATE TABLE IF NOT EXISTS meta_type_cards (
     CHECK (uses >= 0 AND wins >= 0 AND wins <= uses)
 );
 
--- PLAYER_TYPE_CARDS: per-player card usage + wins within deck_type
+-- Per-player card totals within a deck type
 CREATE TABLE IF NOT EXISTS player_type_cards (
   player_tag    TEXT NOT NULL REFERENCES player(player_tag) ON DELETE CASCADE,
   deck_type     TEXT NOT NULL REFERENCES deck_types(deck_type),
@@ -150,6 +132,23 @@ CREATE TABLE IF NOT EXISTS player_type_cards (
 
   CONSTRAINT ck_player_type_cards_nonneg
     CHECK (uses >= 0 AND wins >= 0 AND wins <= uses)
+);
+
+-- NEW: Type vs Type matchup matrix (directional, A's perspective vs B)
+CREATE TABLE IF NOT EXISTS meta_type_matchups (
+  deck_type      TEXT NOT NULL REFERENCES deck_types(deck_type),
+  opp_deck_type  TEXT NOT NULL REFERENCES deck_types(deck_type),
+  uses           INTEGER NOT NULL DEFAULT 0,
+  wins           INTEGER NOT NULL DEFAULT 0,
+
+  PRIMARY KEY (deck_type, opp_deck_type),
+
+  CONSTRAINT ck_meta_type_matchups_nonneg
+    CHECK (uses >= 0 AND wins >= 0 AND wins <= uses)
+
+  -- Optional:
+  -- ,CONSTRAINT ck_meta_type_matchups_no_mirror
+  --   CHECK (deck_type <> opp_deck_type)
 );
 
 -- ============================================================
@@ -176,16 +175,28 @@ CREATE INDEX IF NOT EXISTS idx_meta_type_cards_card
 CREATE INDEX IF NOT EXISTS idx_player_type_cards_card
   ON player_type_cards(card_id, card_variant);
 
+-- NEW: matchup query paths
+CREATE INDEX IF NOT EXISTS idx_meta_type_matchups_opp
+  ON meta_type_matchups(opp_deck_type);
+
 -- ============================================================
 -- 4) Snapshot Refresh Helper (optional)
 -- ============================================================
 -- TRUNCATE in child->parent order to avoid FK issues.
+-- (You can TRUNCATE multiple tables at once; Postgres handles FK order with CASCADE,
+--  but keeping an explicit order is clearer.)
+--
 -- TRUNCATE TABLE
 --   player_type_cards,
 --   meta_type_cards,
 --   meta_type_deck_ids,
+--   meta_type_matchups,
 --   meta_deck_types,
 --   player_decks,
 --   deck_cards,
 --   deck_type_overrides,
---   dec
+--   decks,
+--   cards,
+--   player,
+--   deck_types
+-- RESTART IDENTITY;

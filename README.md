@@ -14,7 +14,7 @@ This project runs in **snapshot mode** (TRUNCATE + RELOAD) so each refresh produ
 ## Author
 
 **Hien Tran**  
-Computer Science Undergraduate · Data & Analytics Engineering
+Computer Science Undergraduate
 
 - 🔗 LinkedIn: https://www.linkedin.com/in/hien-tran-cs/
 - 💻 GitHub: https://github.com/htran174

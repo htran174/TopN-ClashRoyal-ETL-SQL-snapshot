@@ -128,12 +128,14 @@ Install all the requirements in requirements.txt
 
 ### Start Postgres + apply schema
 ```bash
-make refresh #turn on docker, create schema, and call etl
+#turn on docker, create schema, and call etl
+make refresh
 ```
 
 ### Cloud Upload
 ```bash
-make cloud-publish #send local version into the cloud
+#send local version into the cloud
+make cloud-publish 
 ```
 ### Dashboard Preview 
 🔗 **Live Dashboard From Looker Studio:**  

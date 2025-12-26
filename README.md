@@ -1,6 +1,6 @@
 # Clash Royale Top1K Meta Snapshot Warehouse (Postgres)
 
-A data engineering / analytics project that ingests the Top 1,000 global ladder from the official Clash Royale REST API, normalizes and cleans the data, and loads it into a queryable Postgres schema designed for competitive meta analysis.:
+A data engineering / analytics project that ingests the Top 1,000 global ladder from the official Clash Royale REST API, normalizes and cleans the data, and loads it into a queryable Postgres schema designed for competitive meta analysis:
 
 - Which **deck types** are most played?
 - What are their **win rates**?
@@ -16,8 +16,8 @@ This project runs in **snapshot mode** (TRUNCATE + RELOAD) so each refresh produ
 **Hien Tran**  
 Computer Science Undergraduate · Data & Analytics Engineering
 
-- 🔗 LinkedIn: https://www.linkedin.com/in/YOUR-LINKEDIN
-- 💻 GitHub: https://github.com/YOUR-GITHUB
+- 🔗 LinkedIn: https://www.linkedin.com/in/hien-tran-cs/
+- 💻 GitHub: https://github.com/htran174
 
 ---
 ## Quick Links
@@ -105,7 +105,7 @@ This warehouse is organized around a few core **dimensions** and several **relat
   Manual override mechanism: force a specific deck_hash to be labeled as a chosen `deck_type`.
 
 ### Relationship Diagram
-The schema was designed up-front as a relationship model (Mermaid → exported diagram).
+The schema was designed up-front as a relationship model.
 
 ![Relationship Diagram:](images/Relationship.png)
 
@@ -121,13 +121,18 @@ The schema was designed up-front as a relationship model (Mermaid → exported d
 - Clash Royale API token (set in `.env`)
 
 ### Setup
-1) Create `.env` from the .env.example
+Create `.env` from the .env.example
+Install all the requirements in requirements.txt
 
 [Clash Royale Official REST API](https://developer.clashroyale.com)
 
-### Start Postgres + apply schema + upload it into the cloud
+### Start Postgres + apply schema
 ```bash
 make refresh #turn on docker, create schema, and call etl
+```
+
+### Cloud Upload
+```bash
 make cloud-publish #send local version into the cloud
 ```
 ### Dashboard Preview 

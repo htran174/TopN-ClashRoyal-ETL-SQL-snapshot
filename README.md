@@ -10,6 +10,7 @@ A data engineering / analytics project that ingests the Top 1,000 global ladder 
 This project runs in **snapshot mode** (TRUNCATE + RELOAD) so each refresh produces a clean, consistent “current meta” dataset.
 
 ---
+## Quick Links
 - [Features](#features)
 - [Schema Overview](#schema-overview)
 - [Dashboard Preview](#dashboard-preview-looker-studio)
@@ -93,7 +94,7 @@ This warehouse is organized around a few core **dimensions** and several **relat
 - `deck_type_overrides`  
   Manual override mechanism: force a specific deck_hash to be labeled as a chosen `deck_type`.
 
-### ER Diagram
+### Relationship Diagram
 The schema was designed up-front as a relationship model (Mermaid → exported diagram).
 
 ![Relationship Diagram:](images/Relationship.png)
@@ -119,7 +120,7 @@ The schema was designed up-front as a relationship model (Mermaid → exported d
 make refresh #turn on docker, create schema, and call etl
 make cloud-publish #send local version into the cloud
 ```
-### Dashboard from Google Looker Studio using the sql Data
+### Dashboard Preview Looker Studio
 🔗 **Live Dashboard:**  
 https://lookerstudio.google.com/s/qxx95a5Optk
 

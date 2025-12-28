@@ -1,4 +1,4 @@
-# Clash Royale Top1K Meta Snapshot Warehouse (Postgres)
+# Clash Royale TopN Meta Snapshot Warehouse (Postgres)
 
 A data engineering / analytics project that ingests the Top 1,000 global ladder from the official Clash Royale REST API, normalizes and cleans the data, and loads it into a queryable Postgres schema designed for competitive meta analysis:
 

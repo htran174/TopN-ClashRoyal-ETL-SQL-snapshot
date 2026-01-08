@@ -24,7 +24,7 @@ db-query: db-up
 db-down:
 	docker compose down
 
-# DANGEROUS: deletes volumes (pgdata) => wipes database
+# DANGEROUS: deletes database
 db-reset:
 	docker compose down -v
 
